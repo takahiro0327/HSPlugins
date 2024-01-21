@@ -276,6 +276,7 @@ namespace NodesConstraints
                 }
             }, 10);
 
+            gameObject.AddComponent<NodesConstraintsFaster>().nodesConstraints = this;
             gameObject.AddComponent<NodesConstraintsLater>().nodesConstraints = this;            
         }
 
@@ -377,7 +378,30 @@ namespace NodesConstraints
 
         public void VeryLateUpdate()
         {
+            var dynamicBones = GameObject.FindObjectsOfType<DynamicBone>().Where( bone => bone.isActiveAndEnabled && bone.m_Particles.Count > 1 && bone.m_Particles[0].m_Transform != null ).ToList();
+
+            var beforeWorldToLocalMatrixs = dynamicBones.Select(bone => bone.m_Particles[0].m_Transform.worldToLocalMatrix).ToList();
+
             ApplyConstraints(DynamicType.TypeB | DynamicType.TypeC);
+
+            for (int boneIndex = 0; boneIndex < dynamicBones.Count; ++boneIndex)
+            {
+                var particles = dynamicBones[boneIndex].m_Particles;
+                var beforeWorldToLocal = beforeWorldToLocalMatrixs[boneIndex];
+                
+                if (beforeWorldToLocal == particles[0].m_Transform.worldToLocalMatrix)
+                    continue;
+
+                var localToWorldMatrix = particles[0].m_Transform.localToWorldMatrix;
+
+                var matrix = localToWorldMatrix * beforeWorldToLocal;
+
+                for (int i = 0; i < particles.Count; ++i)
+                {
+                    particles[i].m_PrevPosition = matrix.MultiplyPoint3x4(particles[i].m_PrevPosition);
+                    particles[i].m_Position = particles[i].m_Transform.position;
+                }
+            }
         }
 
         [HarmonyPatch]
@@ -419,9 +443,9 @@ namespace NodesConstraints
             );
             IMGUIExtensions.DrawBackground(_windowRect);
         }
-        #endregion
+#endregion
 
-        #region Private Methods
+#region Private Methods
 #if AISHOUJO || HONEYSELECT2
         [HarmonyPatch(typeof(ChaControl), "Load", typeof(bool))]
         private static class ChaControl_Load_Patches
@@ -1421,9 +1445,9 @@ namespace NodesConstraints
             }
             _openedBones.Add(child.gameObject);
         }
-        #endregion
+#endregion
 
-        #region Saves
+#region Saves
 #if KOIKATSU || AISHOUJO || HONEYSELECT2
         private void OnSceneLoad(string path)
         {
@@ -1760,9 +1784,9 @@ namespace NodesConstraints
 
             xmlWriter.WriteEndElement();
         }
-        #endregion
+#endregion
 
-        #region Timeline Compatibility
+#region Timeline Compatibility
         private void PopulateTimeline()
         {
             TimelineCompatibility.AddInterpolableModelDynamic(
@@ -1817,7 +1841,7 @@ namespace NodesConstraints
                         return currentName;
                     });
         }
-        #endregion
+#endregion
     }
 
     /// <summary>
@@ -1828,6 +1852,10 @@ namespace NodesConstraints
     {
         public NodesConstraints nodesConstraints = null;
 
+        void Update() 
+        { 
+        }
+
         void LateUpdate()
         {
             if (nodesConstraints != null)
@@ -1837,6 +1865,23 @@ namespace NodesConstraints
             }
 
             Destroy(this);
+        }
+    }
+
+    /// <summary>
+    /// Component to run after LateUpdate of DynamicBone/ExpressionBone
+    /// </summary>
+    [DefaultExecutionOrder(-50000)]
+    class NodesConstraintsFaster : MonoBehaviour
+    {
+        public NodesConstraints nodesConstraints = null;
+
+        void Update()
+        {
+        }
+
+        void LateUpdate()
+        {
         }
     }
 }
